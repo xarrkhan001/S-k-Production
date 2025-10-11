@@ -187,6 +187,98 @@ const ServiceDetailPage = () => {
     navigate('/');
   };
 
+  // State for fetched service data
+  const [fetchedService, setFetchedService] = useState<Unified | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
+  // Fetch service from server if not available locally
+  useEffect(() => {
+    const fetchServiceFromServer = async () => {
+      if (!id || (stateService && stateService.id === id)) {
+        return; // No need to fetch if we have it from state
+      }
+
+      // Check if service exists in local storage first
+      const source = (ServiceManager as any).getAllServicesWithVariants
+        ? (ServiceManager as any).getAllServicesWithVariants()
+        : ServiceManager.getAllServices();
+      
+      const localService = source.find((s: any) => s.id === id);
+      if (localService) {
+        return; // Service found locally, no need to fetch
+      }
+
+      // Service not found locally, fetch from server
+      setIsLoading(true);
+      setFetchError(null);
+      
+      try {
+        // Try different provider types since we don't know the type
+        const providerTypes: Array<'doctor' | 'clinic' | 'laboratory' | 'pharmacy'> = ['doctor', 'clinic', 'laboratory', 'pharmacy'];
+        
+        for (const type of providerTypes) {
+          try {
+            const service = await ServiceManager.fetchServiceById(id, type);
+            
+            // Map the service to Unified format
+            const mappedService: Unified = {
+              id: service.id,
+              name: service.name,
+              description: service.description,
+              price: Number(service.price ?? 0),
+              rating: service?.averageRating ?? service?.rating ?? 0,
+              location: service?.city ?? "Karachi",
+              provider: service.providerName,
+              image: service.image,
+              type: service.providerType === "doctor" ? "Treatment" : service.providerType === "pharmacy" ? "Medicine" : service.providerType === "laboratory" ? "Test" : service.category === "Surgery" ? "Surgery" : "Treatment",
+              providerType: service.providerType as Unified['providerType'],
+              isReal: true,
+              _providerVerified: Boolean((service as any)._providerVerified),
+              providerId: (service as any).providerId,
+              totalRatings: (service as any).totalRatings ?? 0,
+              providerPhone: (service as any).providerPhone,
+              googleMapLink: (service as any).googleMapLink,
+              ratingBadge: (service as any).ratingBadge,
+              myBadge: (service as any).myBadge,
+              availability: (service as any).availability ?? 'Physical',
+              serviceType: (service as any).serviceType,
+              homeDelivery: Boolean((service as any).homeDelivery),
+              recommended: Boolean((service as any).recommended),
+              timeLabel: (service as any).timeLabel,
+              startTime: (service as any).startTime,
+              endTime: (service as any).endTime,
+              days: (service as any).days,
+              diseases: (service as any).diseases,
+              variants: (service as any).variants,
+              hospitalClinicName: (service as any).hospitalClinicName,
+              department: (service as any).department,
+              stock: (service as any).stock,
+            };
+            
+            setFetchedService(mappedService);
+            console.log('✅ Service fetched from server:', mappedService);
+            break; // Service found, exit loop
+          } catch (err) {
+            // Continue to next provider type
+            continue;
+          }
+        }
+        
+        if (!fetchedService) {
+          setFetchError('Service not found');
+        }
+      } catch (error) {
+        console.error('Error fetching service:', error);
+        setFetchError('Failed to load service');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchServiceFromServer();
+  }, [id, stateService]);
+
   const item: Unified | undefined = useMemo(() => {
     // Always prefer service from navigation state if available
     if (stateService && stateService.id === id) {
@@ -202,6 +294,12 @@ const ServiceDetailPage = () => {
       console.log('  - days:', (stateService as any)?.days);
       console.log('  - variants:', (stateService as any)?.variants);
       return stateService;
+    }
+
+    // Use fetched service if available
+    if (fetchedService) {
+      console.log('Using service fetched from server:', fetchedService);
+      return fetchedService;
     }
     
     console.log('Service not found in navigation state, falling back to ServiceManager');
@@ -461,6 +559,28 @@ const ServiceDetailPage = () => {
     // Always open the booking options modal first
     setIsBookingModalOpen(true);
   };
+
+  // Show loading state while fetching service
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background">
+        <div className="container mx-auto px-4 py-12">
+          <div className="text-center text-muted-foreground">Loading service details...</div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error state if fetch failed
+  if (fetchError) {
+    return (
+      <div className="min-h-screen bg-background">
+        <div className="container mx-auto px-4 py-12">
+          <div className="text-center text-muted-foreground">{fetchError}</div>
+        </div>
+      </div>
+    );
+  }
 
   if (!item) {
     console.log('No item found, navigation state:', locationHook.state);
